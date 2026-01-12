@@ -163,7 +163,7 @@ int main() {
   GPIOA->ODR |= GPIO_PIN_5;
   GPIOB->ODR |= DEBUG_PIN_B;
   while (1) {
-    // __WFI();
+    __WFI();
   }
 }
 
