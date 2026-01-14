@@ -10,6 +10,7 @@
 #include "stm32f4xx_hal_gpio_ex.h"
 #include "stm32f4xx_hal_rcc.h"
 #include "stm32f4xx_hal_uart.h"
+#include "stm32f4xx_it.h" //important because the core will go into error state when a not uder-defined interrrupt triggers
 // #include "stm32f4xx_hal_uart_ex.h"
 #include "stm32f4xx_hal_usart.h"
 #include "stm32f4xx_ll_gpio.h"
