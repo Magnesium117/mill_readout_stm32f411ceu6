@@ -2,6 +2,7 @@
 // #include "Legacy/stm32_hal_legacy.h"
 // #include "disp.h"
 // #include "stm32f4xx.h"
+#include "disp.h"
 #include "stm32f4xx.h"
 #include "stm32f4xx_hal.h"
 #include "stm32f4xx_hal_exti.h"
@@ -163,6 +164,7 @@ int main() {
   GPIOA->ODR |= GPIO_PIN_5;
   GPIOB->ODR |= DEBUG_PIN_B;
   while (1) {
+    checkDisplayMessageBuffer();
     __WFI();
   }
 }

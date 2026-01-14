@@ -1,5 +1,4 @@
 #pragma once
-#include "disp.h"
 #include <stdint.h>
 int decodeFrames(uint32_t *message);
 uint8_t getDigit(uint8_t data);

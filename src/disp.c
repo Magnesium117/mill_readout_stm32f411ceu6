@@ -1,8 +1,8 @@
 #include "disp.h"
 #include "Legacy/stm32_hal_legacy.h"
 #include "cmsis_gcc.h"
+#include "display_characters.h"
 #include "main.h"
-// #include "stm32f334x8.h"
 #include "stm32f4xx.h"
 #include "stm32f4xx_hal.h"
 #include "stm32f4xx_hal_cortex.h"
@@ -13,7 +13,6 @@
 #include "stm32f4xx_hal_rcc.h"
 #include "stm32f4xx_hal_tim.h"
 #include "stm32f4xx_hal_uart.h"
-// #include "stm32f4xx_hal_uart_ex.h"
 #include "stm32f4xx_hal_usart.h"
 #include "stm32f4xx_ll_gpio.h"
 #include <stdint.h>
@@ -24,6 +23,17 @@
 #define DISPLAY_ON_FULL 0b10001111
 static const uint8_t DISPLAY_ADDR[6] = {0b11000000, 0b11000001, 0b11000010,
                                         0b11000011, 0b11000100, 0b11000101};
+/*
+ * Bit Number to segment
+ *
+ *     0
+ *    ---
+ * 5 | 6 | 1
+ *    ---
+ * 4 |   | 2
+ *    ---    . 7
+ *     3
+ */
 static const uint8_t segments[18] = {
     0b00111111, // 0
     0b00000110, // 1
@@ -52,10 +62,23 @@ uint8_t initmsg[5] = "init";
 uint16_t output_buffer[512] = {0};
 uint32_t bufferidx = 0;
 uint32_t buffermax = 0;
-int DisplayTransmissionRunning = 0;
 uint16_t DIOPIN_A = 0;
 uint16_t CLKPIN_A = 0;
 int DIOpinNumber = 0;
+/*
+ * Displaybuffer
+ */
+#define DISPLAY_MESSAGE_BUFFER_SIZE 16
+struct DisplayMessageBufferElement_s {
+  uint8_t message[64];
+  int size;
+};
+typedef struct DisplayMessageBufferElement_s DisplayMessageBufferElement_t;
+DisplayMessageBufferElement_t
+    displayMessageBuffer[DISPLAY_MESSAGE_BUFFER_SIZE] = {0};
+volatile int displayMessageBufferCat = 0;
+volatile int displayMessageBufferMouse = 0;
+volatile int DisplayTransmissionRunning = 0;
 
 void initDisplay(GPIO_TypeDef *Port, uint16_t DIO,
                  USART_HandleTypeDef *HUSART2) {
@@ -129,13 +152,14 @@ void initDisplay(GPIO_TypeDef *Port, uint16_t DIO,
   // uint8_t data_buffer[11] = {0xFF, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
   // sendMessage(data_buffer, 11);
   DisplayTransmissionRunning = 0;
-  uint8_t display_init = DISPLAY_ON_FULL;
-  sendMessage(&display_init, 1);
+  displayOn();
+  // uint8_t display_init = DISPLAY_ON_FULL;
+  // sendMessage(&display_init, 1);
   // for (int i = 0; i < 10; i++) {
   // __NOP();
   // }
-  uint8_t display_clear[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-  displayDataInt(display_clear, 6);
+  // uint8_t display_clear[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  // displayDataInt(display_clear, 6);
 }
 
 void TIM3_IRQHandler() {
@@ -222,21 +246,72 @@ int fillOutputBuffer(uint8_t *data_buffer, int size, uint16_t *odr_buffer) {
   }
   return 0;
 }
-int sendMessage(uint8_t *data_buffer, int size) {
-  // uint8_t usartbuffer = 0;
-  while (DisplayTransmissionRunning == 1) {
-    // transmissionRunning = 0;
-    // usartbuffer = DisplayTransmissionRunning + 0x30;
-    // HAL_USART_Transmit(husart2, &usartbuffer, 1, 1);
-    __NOP();
-  }
-  // HAL_USART_Transmit(husart2, initmsg, 4, 1);
-  DisplayTransmissionRunning = 1;
-  HAL_GPIO_WritePin(GPIOA, CLKPIN_A, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(GPIOA, DIOPIN_A, GPIO_PIN_RESET);
-  if (fillOutputBuffer(data_buffer, size, output_buffer) != 0) {
+// int sendMessage(uint8_t *data_buffer, int size) {
+//   // uint8_t usartbuffer = 0;
+//   while (DisplayTransmissionRunning == 1) {
+//     // transmissionRunning = 0;
+//     // usartbuffer = DisplayTransmissionRunning + 0x30;
+//     // HAL_USART_Transmit(husart2, &usartbuffer, 1, 1);
+//     __NOP();
+//   }
+//   // HAL_USART_Transmit(husart2, initmsg, 4, 1);
+//   DisplayTransmissionRunning = 1;
+//   HAL_GPIO_WritePin(GPIOA, CLKPIN_A, GPIO_PIN_SET);
+//   HAL_GPIO_WritePin(GPIOA, DIOPIN_A, GPIO_PIN_RESET);
+//   if (fillOutputBuffer(data_buffer, size, output_buffer) != 0) {
+//     return 1;
+//   }
+//   TIM3->CNT = 0;
+//   bufferidx = 0;
+//   buffermax = size * 9;
+//   // HAL_GPIO_WritePin(GPIOA, DIOPIN_A, GPIO_PIN_RESET);
+//   GPIOA->MODER &= ~(0b01 << (2 * 6));
+//   GPIOA->MODER |= (0b10 << (2 * 6));
+//
+//   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+//   return 0;
+// }
+
+int displayOn() {
+  uint8_t display_on = DISPLAY_ON_FULL;
+
+  uint8_t send_buffer_cmd1 = SEND_DATA_ADDR_ADDING;
+  if (sendMessage(&send_buffer_cmd1, 1) != 0) {
     return 1;
   }
+  uint8_t send_buffer[7] = {DISPLAY_ADDR[3],
+                            0,
+                            DISPLAY_CHARACTER_E,
+                            DISPLAY_CHARACTER_N,
+                            DISPLAY_CHARACTER_O,
+                            DISPLAY_CHARACTER_N,
+                            0};
+  HAL_USART_Transmit(husart2, send_buffer, 7, 1);
+  // send_buffer[0] = DISPLAY_ADDR[2];
+  // for (int i = 0; i < 6; i++) {
+  // send_buffer[i + 1] = 0x00;
+  // }
+  if (sendMessage(send_buffer, 7) != 0) {
+    return 1;
+  }
+  // uint8_t display_on = DISPLAY_ON_FULL;
+  if (sendMessage(&display_on, 1) != 0) {
+    return 1;
+  }
+  return 0;
+}
+int transmitMessage(uint8_t *data_buffer, int size) {
+  if (DisplayTransmissionRunning) {
+    return 1;
+  }
+  DisplayTransmissionRunning = 1;
+  if (fillOutputBuffer(data_buffer, size, output_buffer) != 0) {
+    DisplayTransmissionRunning = 0;
+    return 2;
+  }
+  HAL_GPIO_WritePin(GPIOA, CLKPIN_A, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, DIOPIN_A, GPIO_PIN_RESET);
+
   TIM3->CNT = 0;
   bufferidx = 0;
   buffermax = size * 9;
@@ -246,4 +321,41 @@ int sendMessage(uint8_t *data_buffer, int size) {
 
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   return 0;
+}
+int sendMessage(uint8_t *data_buffer, int size) {
+  int res = transmitMessage(data_buffer, size);
+  if (res == 1) {
+    if ((displayMessageBufferMouse + 1) % DISPLAY_MESSAGE_BUFFER_SIZE ==
+        displayMessageBufferCat) {
+      return 1;
+    }
+    for (int i = 0; i < size; i++) {
+      displayMessageBuffer[displayMessageBufferMouse].message[i] =
+          data_buffer[i];
+    }
+    displayMessageBuffer[displayMessageBufferMouse].size = size;
+    displayMessageBufferMouse =
+        (displayMessageBufferMouse + 1) % DISPLAY_MESSAGE_BUFFER_SIZE;
+    return 0;
+  }
+  if (res == 2) {
+    return 1;
+  }
+  if (res == 0) {
+    return 0;
+  }
+  return 1;
+}
+void checkDisplayMessageBuffer() {
+  if (DisplayTransmissionRunning ||
+      displayMessageBufferCat == displayMessageBufferMouse) {
+    return;
+  }
+  int res =
+      transmitMessage(displayMessageBuffer[displayMessageBufferCat].message,
+                      displayMessageBuffer[displayMessageBufferCat].size);
+  if (!res) {
+    displayMessageBufferCat =
+        (displayMessageBufferCat + 1) % DISPLAY_MESSAGE_BUFFER_SIZE;
+  }
 }
